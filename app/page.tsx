@@ -54,7 +54,6 @@ export default function Page() {
     // Handle submit (add or update dish)
     const handleSubmit = async () => {
         if (!name) return alert('Please enter your name')
-        if (!dish) return alert('Please enter a dish')
 
         if (editingId) {
             // Update existing dish
@@ -90,13 +89,14 @@ export default function Page() {
     }
 
     // Handle delete
-    const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to delete this dish?')) {
+    const handleDelete = async (id: string, category: string, dish: string) => {
+        const dishName = dish || '-'
+        if (confirm(`Are you sure you want to delete ${category} (${dishName})?`)) {
             await supabase
                 .from('responses')
                 .delete()
                 .eq('id', id)
-                .eq('name', name) // only allow delete for this name
+                .eq('name', name)
             fetchResponses()
         }
     }
@@ -178,12 +178,13 @@ export default function Page() {
 
                     {/* Dish name */}
                     <label className="block mb-2">
-                        Dish:
+                        Dish (optional):
                         <input
                             type="text"
                             className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-gray-100"
                             value={dish}
                             onChange={e => setDish(e.target.value)}
+                            placeholder="Optional"
                         />
                     </label>
 
@@ -220,7 +221,7 @@ export default function Page() {
                                                 </button>
                                                 <button
                                                     className="px-1.5 py-0.5 text-xs bg-red-500 dark:bg-red-600 text-white rounded"
-                                                    onClick={() => handleDelete(r.id)}
+                                                    onClick={() => handleDelete(r.id, r.category, r.dish)}
                                                 >
                                                     Delete
                                                 </button>
