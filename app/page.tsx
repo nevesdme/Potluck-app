@@ -17,7 +17,7 @@ export default function Page() {
     const [attending, setAttending] = useState(true)
     const [category, setCategory] = useState('Main')
     const [dish, setDish] = useState('')
-    const [myId, setMyId] = useState<string | null>(null)
+    const [editingId, setEditingId] = useState<string | null>(null)
 
     // Fetch all responses
     const fetchResponses = async () => {
@@ -25,30 +25,9 @@ export default function Page() {
         setResponses(data || [])
     }
 
-    // Load my previous response from localStorage
-    useEffect(() => {
-        const storedId = localStorage.getItem('potluck_response_id')
-        if (storedId) {
-            setMyId(storedId)
-            supabase
-                .from('responses')
-                .select('*')
-                .eq('id', storedId)
-                .then(({ data }) => {
-                    if (data && data[0]) {
-                        const r = data[0]
-                        setName(r.name)
-                        setAttending(r.attending)
-                        setCategory(r.category || 'Main')
-                        setDish(r.dish || '')
-                    }
-                })
-        }
-        fetchResponses()
-    }, [])
-
     // Realtime subscription
     useEffect(() => {
+        fetchResponses()
         const channel = supabase
             .channel('responses')
             .on(
@@ -58,31 +37,43 @@ export default function Page() {
             )
             .subscribe()
 
-        return () => {
-            supabase.removeChannel(channel)
-        }
+        return () => supabase.removeChannel(channel)
     }, [])
 
-    // Handle submit
+    // Handle submit (add or update dish)
     const handleSubmit = async () => {
         if (!name) return alert('Please enter your name')
 
-        if (myId) {
-            // Update existing
+        if (editingId) {
+            // Update existing dish
             await supabase
                 .from('responses')
-                .update({ name, attending, category, dish })
-                .eq('id', myId)
+                .update({ category, dish })
+                .eq('id', editingId)
+            setEditingId(null)
         } else {
-            // Insert new
-            const { data } = await supabase
-                .from('responses')
-                .insert({ name, attending, category, dish })
-                .select()
-            if (data && data[0]) {
-                setMyId(data[0].id)
-                localStorage.setItem('potluck_response_id', data[0].id)
-            }
+            // Insert new dish
+            await supabase.from('responses').insert({ name, attending, category, dish })
+        }
+
+        // Reset form
+        setCategory('Main')
+        setDish('')
+    }
+
+    // Handle edit
+    const handleEdit = (r: Response) => {
+        setEditingId(r.id)
+        setCategory(r.category)
+        setDish(r.dish)
+        setName(r.name)
+        setAttending(r.attending)
+    }
+
+    // Handle delete
+    const handleDelete = async (id: string) => {
+        if (confirm('Are you sure you want to delete this dish?')) {
+            await supabase.from('responses').delete().eq('id', id)
         }
     }
 
@@ -94,13 +85,19 @@ export default function Page() {
         Drink: responses.filter(r => r.attending && r.category === 'Drink').length,
     }
 
-    // Add total count of people
-    const totalAttending = responses.filter(r => r.attending).length
+    // Total attending
+    const totalAttending = responses.filter(r => r.attending).map(r => r.name).filter((v, i, a) => a.indexOf(v) === i).length
+
+    // Group responses by name for display
+    const groupedResponses: Record<string, Response[]> = {}
+    responses.forEach(r => {
+        if (!groupedResponses[r.name]) groupedResponses[r.name] = []
+        groupedResponses[r.name].push(r)
+    })
 
     return (
         <main className="max-w-xl mx-auto p-6 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
-            <h1 className="text-2xl font-bold mb-4 text-center">🍽️ Potluck RSVP</h1>
-
+            <h1 className="text-2xl font-bold mb-2 text-center">🍽️ Potluck RSVP</h1>
             <p className="text-center mb-4 text-gray-700 dark:text-gray-300">
                 Total people attending: {totalAttending}
             </p>
@@ -118,7 +115,7 @@ export default function Page() {
 
             {/* RSVP Form */}
             <div className="mb-6 p-4 border rounded bg-white dark:bg-gray-700">
-                <h2 className="font-semibold mb-2">Your RSVP</h2>
+                <h2 className="font-semibold mb-2">{editingId ? 'Edit Dish' : 'Add a Dish'}</h2>
 
                 <label className="block mb-2">
                     Name:
@@ -133,20 +130,10 @@ export default function Page() {
                 <div className="mb-2">
                     Attending?
                     <label className="ml-2">
-                        <input
-                            type="radio"
-                            checked={attending}
-                            onChange={() => setAttending(true)}
-                        />{' '}
-                        Yes
+                        <input type="radio" checked={attending} onChange={() => setAttending(true)} /> Yes
                     </label>
                     <label className="ml-2">
-                        <input
-                            type="radio"
-                            checked={!attending}
-                            onChange={() => setAttending(false)}
-                        />{' '}
-                        No
+                        <input type="radio" checked={!attending} onChange={() => setAttending(false)} /> No
                     </label>
                 </div>
 
@@ -169,7 +156,7 @@ export default function Page() {
                         </div>
 
                         <label className="block mb-2">
-                            Dish (optional):
+                            Dish:
                             <input
                                 type="text"
                                 className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-gray-100"
@@ -184,20 +171,43 @@ export default function Page() {
                     className="mt-2 px-4 py-2 bg-green-500 dark:bg-green-600 text-white rounded hover:bg-green-600 dark:hover:bg-green-700"
                     onClick={handleSubmit}
                 >
-                    Save
+                    {editingId ? 'Update Dish' : 'Add Dish'}
                 </button>
             </div>
 
             {/* All Responses */}
             <div className="p-4 border rounded bg-gray-100 dark:bg-gray-800">
                 <h2 className="font-semibold mb-2">All Responses</h2>
-                <ul className="text-sm">
-                    {responses.map(r => (
-                        <li key={r.id}>
-                            {r.name} — {r.attending ? `${r.category} (${r.dish || '-'})` : 'Not attending'}
-                        </li>
-                    ))}
-                </ul>
+                {Object.entries(groupedResponses).map(([person, dishes]) => (
+                    <div key={person} className="mb-2">
+                        <p className="font-semibold">{person} — {dishes[0].attending ? 'Attending' : 'Not attending'}</p>
+                        <ul className="ml-4">
+                            {dishes.map(r => (
+                                <li key={r.id} className="flex items-center justify-between">
+                                    <span>
+                                        {r.category} ({r.dish || '-'})
+                                    </span>
+                                    {r.attending && (
+                                        <span className="space-x-1">
+                                            <button
+                                                className="px-2 py-1 text-sm bg-yellow-500 dark:bg-yellow-600 text-white rounded"
+                                                onClick={() => handleEdit(r)}
+                                            >
+                                                Edit
+                                            </button>
+                                            <button
+                                                className="px-2 py-1 text-sm bg-red-500 dark:bg-red-600 text-white rounded"
+                                                onClick={() => handleDelete(r.id)}
+                                            >
+                                                Delete
+                                            </button>
+                                        </span>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ))}
             </div>
         </main>
     )
