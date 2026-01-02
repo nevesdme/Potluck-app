@@ -178,7 +178,7 @@ export default function Page() {
 
                     {/* Dish name */}
                     <label className="block mb-2">
-                        Dish (optional):
+                        Dish/Drink name (optional):
                         <input
                             type="text"
                             className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-gray-100"
