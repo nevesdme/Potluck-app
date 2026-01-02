@@ -130,7 +130,7 @@ export default function Page() {
 
             {/* Live Counts */}
             <div className="mb-6 p-4 border rounded bg-gray-100 dark:bg-gray-800">
-                <h2 className="font-semibold mb-2">Live Counts</h2>
+                <h2 className="font-semibold mb-2">Total dishes</h2>
                 <ul className="flex justify-between text-sm">
                     <li>Main: {counts.Main}</li>
                     <li>Appetizer: {counts.Appetizer}</li>
@@ -142,8 +142,6 @@ export default function Page() {
             {/* RSVP Form */}
             {loadedFromLocal && (
                 <div className="mb-6 p-4 border rounded bg-white dark:bg-gray-700">
-                    <h2 className="font-semibold mb-2">{editingId ? 'Edit Dish' : 'Add a Dish'}</h2>
-
                     <label className="block mb-2">
                         Name:
                         <input
@@ -153,6 +151,8 @@ export default function Page() {
                             onChange={e => setName(e.target.value)}
                         />
                     </label>
+
+                    <h2 className="font-semibold mb-2">{editingId ? 'Edit Dish' : 'Add a Dish'}</h2>
 
                     <div className="mb-2">
                         Category:
