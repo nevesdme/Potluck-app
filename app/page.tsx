@@ -130,7 +130,7 @@ export default function Page() {
 
             {/* Live Counts */}
             <div className="mb-6 p-4 border rounded bg-gray-100 dark:bg-gray-800">
-                <h2 className="font-semibold mb-2">Live Counts</h2>
+                <h2 className="font-semibold mb-2">Total dishes/drinks</h2>
                 <ul className="flex justify-between text-sm">
                     <li>Main: {counts.Main}</li>
                     <li>Appetizer: {counts.Appetizer}</li>
