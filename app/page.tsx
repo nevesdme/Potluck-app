@@ -37,6 +37,7 @@ export default function Page() {
     // Realtime subscription
     useEffect(() => {
         fetchResponses()
+
         const channel = supabase
             .channel('responses')
             .on(
@@ -45,7 +46,11 @@ export default function Page() {
                 () => fetchResponses()
             )
             .subscribe()
-        return () => supabase.removeChannel(channel)
+
+        // CLEANUP: synchronous function
+        return () => {
+            void supabase.removeChannel(channel) // ignore the Promise
+        }
     }, [])
 
     // Handle submit (add or update dish)
