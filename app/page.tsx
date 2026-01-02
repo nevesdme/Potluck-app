@@ -18,12 +18,21 @@ export default function Page() {
     const [category, setCategory] = useState('Main')
     const [dish, setDish] = useState('')
     const [editingId, setEditingId] = useState<string | null>(null)
+    const [loadedFromLocal, setLoadedFromLocal] = useState(false) // ensure localStorage runs only on client
 
     // Fetch all responses
     const fetchResponses = async () => {
         const { data } = await supabase.from('responses').select('*')
         setResponses(data || [])
     }
+
+    // Load my ID from localStorage (client-side only)
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const storedId = localStorage.getItem('potluck_response_id')
+        if (storedId) setEditingId(storedId)
+        setLoadedFromLocal(true)
+    }, [])
 
     // Realtime subscription
     useEffect(() => {
@@ -36,7 +45,6 @@ export default function Page() {
                 () => fetchResponses()
             )
             .subscribe()
-
         return () => supabase.removeChannel(channel)
     }, [])
 
@@ -48,17 +56,23 @@ export default function Page() {
             // Update existing dish
             await supabase
                 .from('responses')
-                .update({ category, dish })
+                .update({ category, dish, attending })
                 .eq('id', editingId)
-            setEditingId(null)
         } else {
             // Insert new dish
-            await supabase.from('responses').insert({ name, attending, category, dish })
+            const { data } = await supabase
+                .from('responses')
+                .insert({ name, attending, category, dish })
+                .select()
+            if (data && data[0] && typeof window !== 'undefined') {
+                localStorage.setItem('potluck_response_id', data[0].id)
+            }
         }
 
         // Reset form
         setCategory('Main')
         setDish('')
+        setEditingId(null)
     }
 
     // Handle edit
@@ -74,6 +88,7 @@ export default function Page() {
     const handleDelete = async (id: string) => {
         if (confirm('Are you sure you want to delete this dish?')) {
             await supabase.from('responses').delete().eq('id', id)
+            fetchResponses() // ensure UI updates immediately
         }
     }
 
@@ -85,10 +100,13 @@ export default function Page() {
         Drink: responses.filter(r => r.attending && r.category === 'Drink').length,
     }
 
-    // Total attending
-    const totalAttending = responses.filter(r => r.attending).map(r => r.name).filter((v, i, a) => a.indexOf(v) === i).length
+    // Total attending (unique names)
+    const totalAttending = responses
+        .filter(r => r.attending)
+        .map(r => r.name)
+        .filter((v, i, a) => a.indexOf(v) === i).length
 
-    // Group responses by name for display
+    // Group responses by name
     const groupedResponses: Record<string, Response[]> = {}
     responses.forEach(r => {
         if (!groupedResponses[r.name]) groupedResponses[r.name] = []
@@ -114,66 +132,68 @@ export default function Page() {
             </div>
 
             {/* RSVP Form */}
-            <div className="mb-6 p-4 border rounded bg-white dark:bg-gray-700">
-                <h2 className="font-semibold mb-2">{editingId ? 'Edit Dish' : 'Add a Dish'}</h2>
+            {loadedFromLocal && (
+                <div className="mb-6 p-4 border rounded bg-white dark:bg-gray-700">
+                    <h2 className="font-semibold mb-2">{editingId ? 'Edit Dish' : 'Add a Dish'}</h2>
 
-                <label className="block mb-2">
-                    Name:
-                    <input
-                        type="text"
-                        className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-gray-100"
-                        value={name}
-                        onChange={e => setName(e.target.value)}
-                    />
-                </label>
-
-                <div className="mb-2">
-                    Attending?
-                    <label className="ml-2">
-                        <input type="radio" checked={attending} onChange={() => setAttending(true)} /> Yes
+                    <label className="block mb-2">
+                        Name:
+                        <input
+                            type="text"
+                            className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-gray-100"
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                        />
                     </label>
-                    <label className="ml-2">
-                        <input type="radio" checked={!attending} onChange={() => setAttending(false)} /> No
-                    </label>
-                </div>
 
-                {attending && (
-                    <>
-                        <div className="mb-2">
-                            Category:
-                            {['Main', 'Appetizer', 'Dessert', 'Drink'].map(cat => (
-                                <button
-                                    key={cat}
-                                    className={`ml-2 px-2 py-1 border rounded ${category === cat
-                                            ? 'bg-blue-500 text-white dark:bg-blue-600'
-                                            : 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100'
-                                        }`}
-                                    onClick={() => setCategory(cat)}
-                                >
-                                    {cat}
-                                </button>
-                            ))}
-                        </div>
-
-                        <label className="block mb-2">
-                            Dish:
-                            <input
-                                type="text"
-                                className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-gray-100"
-                                value={dish}
-                                onChange={e => setDish(e.target.value)}
-                            />
+                    <div className="mb-2">
+                        Attending?
+                        <label className="ml-2">
+                            <input type="radio" checked={attending} onChange={() => setAttending(true)} /> Yes
                         </label>
-                    </>
-                )}
+                        <label className="ml-2">
+                            <input type="radio" checked={!attending} onChange={() => setAttending(false)} /> No
+                        </label>
+                    </div>
 
-                <button
-                    className="mt-2 px-4 py-2 bg-green-500 dark:bg-green-600 text-white rounded hover:bg-green-600 dark:hover:bg-green-700"
-                    onClick={handleSubmit}
-                >
-                    {editingId ? 'Update Dish' : 'Add Dish'}
-                </button>
-            </div>
+                    {attending && (
+                        <>
+                            <div className="mb-2">
+                                Category:
+                                {['Main', 'Appetizer', 'Dessert', 'Drink'].map(cat => (
+                                    <button
+                                        key={cat}
+                                        className={`ml-2 px-2 py-1 border rounded ${category === cat
+                                                ? 'bg-blue-500 text-white dark:bg-blue-600'
+                                                : 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100'
+                                            }`}
+                                        onClick={() => setCategory(cat)}
+                                    >
+                                        {cat}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <label className="block mb-2">
+                                Dish:
+                                <input
+                                    type="text"
+                                    className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-gray-100"
+                                    value={dish}
+                                    onChange={e => setDish(e.target.value)}
+                                />
+                            </label>
+                        </>
+                    )}
+
+                    <button
+                        className="mt-2 px-4 py-2 bg-green-500 dark:bg-green-600 text-white rounded hover:bg-green-600 dark:hover:bg-green-700"
+                        onClick={handleSubmit}
+                    >
+                        {editingId ? 'Update Dish' : 'Add Dish'}
+                    </button>
+                </div>
+            )}
 
             {/* All Responses */}
             <div className="p-4 border rounded bg-gray-100 dark:bg-gray-800">
