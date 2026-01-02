@@ -16,76 +16,80 @@ export default function Page() {
     const [category, setCategory] = useState('Main')
     const [dish, setDish] = useState('')
     const [editingId, setEditingId] = useState<string | null>(null)
-    const [loadedFromLocal, setLoadedFromLocal] = useState(false) // client-only localStorage
 
-    // Fetch all responses
+    // Fetch responses
     const fetchResponses = async () => {
-        const { data } = await supabase.from('responses').select('*')
+        const { data, error } = await supabase
+            .from('responses')
+            .select('*')
+            .order('created_at')
+
+        if (error) {
+            console.error(error)
+            return
+        }
+
         setResponses(data || [])
     }
 
-    // Load my ID and name from localStorage (client-side only)
+    // Load name from localStorage
     useEffect(() => {
-        if (typeof window === 'undefined') return
-        const storedId = localStorage.getItem('potluck_response_id')
-        if (storedId) setEditingId(storedId)
-
         const storedName = localStorage.getItem('potluck_name')
         if (storedName) setName(storedName)
-
-        setLoadedFromLocal(true)
     }, [])
 
-    // Realtime subscription
+    // Realtime updates
     useEffect(() => {
         fetchResponses()
+
         const channel = supabase
             .channel('responses')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'responses' },
-                () => fetchResponses()
+                fetchResponses
             )
             .subscribe()
 
         return () => {
-            void supabase.removeChannel(channel)
+            supabase.removeChannel(channel)
         }
     }, [])
 
-    // Handle submit (add or update dish)
+    // Add or update dish
     const handleSubmit = async () => {
-        if (!name) return alert('Please enter your name')
+        if (!name.trim()) {
+            alert('Please enter your name')
+            return
+        }
+
+        let result
 
         if (editingId) {
-            // Update existing dish
-            await supabase
+            result = await supabase
                 .from('responses')
                 .update({ category, dish })
                 .eq('id', editingId)
         } else {
-            // Insert new dish
-            const { data } = await supabase
-                .from('responses')
-                .insert({ name, category, dish })
-                .select()
-            if (data && data[0] && typeof window !== 'undefined') {
-                localStorage.setItem('potluck_response_id', data[0].id)
-            }
+            result = await supabase.from('responses').insert({
+                name,
+                category,
+                dish,
+            })
         }
 
-        // Save name in localStorage for next dish
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('potluck_name', name)
+        if (result.error) {
+            alert(result.error.message)
+            return
         }
 
-        // Reset form, but keep name prefilled
-        setCategory('Main')
+        localStorage.setItem('potluck_name', name)
+
         setDish('')
+        setCategory('Main')
         setEditingId(null)
     }
 
-    // Handle edit
     const handleEdit = (r: Response) => {
         setEditingId(r.id)
         setCategory(r.category)
@@ -93,15 +97,12 @@ export default function Page() {
         setName(r.name)
     }
 
-    // Handle delete
     const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to delete this dish?')) {
-            await supabase.from('responses').delete().eq('id', id)
-            fetchResponses()
-        }
+        if (!confirm('Delete this dish?')) return
+        await supabase.from('responses').delete().eq('id', id)
     }
 
-    // Compute counts per category
+    // Counts
     const counts = {
         Main: responses.filter(r => r.category === 'Main').length,
         Appetizer: responses.filter(r => r.category === 'Appetizer').length,
@@ -109,26 +110,21 @@ export default function Page() {
         Drink: responses.filter(r => r.category === 'Drink').length,
     }
 
-    // Total attending = unique names
-    const totalAttending = responses
-        .map(r => r.name)
-        .filter((v, i, a) => a.indexOf(v) === i).length
+    const totalPeople = Array.from(new Set(responses.map(r => r.name))).length
 
-    // Group responses by name
-    const groupedResponses: Record<string, Response[]> = {}
+    const grouped: Record<string, Response[]> = {}
     responses.forEach(r => {
-        if (!groupedResponses[r.name]) groupedResponses[r.name] = []
-        groupedResponses[r.name].push(r)
+        if (!grouped[r.name]) grouped[r.name] = []
+        grouped[r.name].push(r)
     })
 
     return (
         <main className="max-w-xl mx-auto p-6 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
             <h1 className="text-2xl font-bold mb-2 text-center">🍽️ Potluck RSVP</h1>
             <p className="text-center mb-4 text-gray-700 dark:text-gray-300">
-                Total people attending: {totalAttending}
+                Total people attending: {totalPeople}
             </p>
 
-            {/* Live Counts */}
             <div className="mb-6 p-4 border rounded bg-gray-100 dark:bg-gray-800">
                 <h2 className="font-semibold mb-2">Total dishes</h2>
                 <ul className="flex justify-between text-sm">
@@ -139,78 +135,78 @@ export default function Page() {
                 </ul>
             </div>
 
-            {/* RSVP Form */}
-            {loadedFromLocal && (
-                <div className="mb-6 p-4 border rounded bg-white dark:bg-gray-700">
-                    <label className="block mb-2">
-                        Name:
-                        <input
-                            type="text"
-                            className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-gray-100"
-                            value={name}
-                            onChange={e => setName(e.target.value)}
-                        />
-                    </label>
+            {/* Form */}
+            <div className="mb-6 p-4 border rounded bg-white dark:bg-gray-700">
+                <label className="block mb-3">
+                    <span className="font-medium">Name:</span>
+                    <input
+                        className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                    />
+                </label>
 
-                    <h2 className="font-semibold mb-2">{editingId ? 'Edit Dish' : 'Add a Dish'}</h2>
+                <h2 className="font-semibold mb-2">
+                    {editingId ? 'Edit Dish' : 'Add a Dish'}
+                </h2>
 
-                    <div className="mb-2">
-                        Category:
-                        {['Main', 'Appetizer', 'Dessert', 'Drink'].map(cat => (
-                            <button
-                                key={cat}
-                                className={`ml-2 px-2 py-1 border rounded ${category === cat
-                                        ? 'bg-blue-500 text-white dark:bg-blue-600'
-                                        : 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100'
-                                    }`}
-                                onClick={() => setCategory(cat)}
-                            >
-                                {cat}
-                            </button>
-                        ))}
-                    </div>
-
-                    <label className="block mb-2">
-                        Dish:
-                        <input
-                            type="text"
-                            className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-gray-100"
-                            value={dish}
-                            onChange={e => setDish(e.target.value)}
-                        />
-                    </label>
-
-                    <button
-                        className="mt-2 px-4 py-2 bg-green-500 dark:bg-green-600 text-white rounded hover:bg-green-600 dark:hover:bg-green-700"
-                        onClick={handleSubmit}
-                    >
-                        {editingId ? 'Update Dish' : 'Add Dish'}
-                    </button>
+                <div className="mb-2">
+                    Category:
+                    {['Main', 'Appetizer', 'Dessert', 'Drink'].map(cat => (
+                        <button
+                            key={cat}
+                            type="button"
+                            className={`ml-2 px-2 py-1 border rounded ${category === cat
+                                    ? 'bg-blue-500 text-white'
+                                    : 'bg-white dark:bg-gray-600'
+                                }`}
+                            onClick={() => setCategory(cat)}
+                        >
+                            {cat}
+                        </button>
+                    ))}
                 </div>
-            )}
 
-            {/* All Responses */}
+                <label className="block mb-2">
+                    Dish:
+                    <input
+                        className="ml-2 border rounded px-2 py-1 bg-gray-50 dark:bg-gray-600"
+                        value={dish}
+                        onChange={e => setDish(e.target.value)}
+                    />
+                </label>
+
+                <button
+                    className="mt-2 px-4 py-2 bg-green-500 text-white rounded"
+                    onClick={handleSubmit}
+                >
+                    {editingId ? 'Update Dish' : 'Add Dish'}
+                </button>
+            </div>
+
+            {/* Responses */}
             <div className="p-4 border rounded bg-gray-100 dark:bg-gray-800">
                 <h2 className="font-semibold mb-2">All Responses</h2>
-                {Object.entries(groupedResponses).map(([person, dishes]) => (
+
+                {Object.entries(grouped).map(([person, dishes]) => (
                     <div key={person} className="mb-2">
                         <p className="font-semibold">{person}</p>
                         <ul className="ml-4">
-                            {dishes.map(r => (
-                                <li key={r.id} className="flex items-center justify-between">
+                            {dishes.map(d => (
+                                <li key={d.id} className="flex justify-between">
                                     <span>
-                                        {r.category} ({r.dish || '-'})
+                                        {d.category} ({d.dish || '-'})
                                     </span>
                                     <span className="space-x-1">
                                         <button
-                                            className="px-1.5 py-0.5 text-xs bg-yellow-500 dark:bg-yellow-600 text-white rounded"
-                                            onClick={() => handleEdit(r)}
+                                            className="px-1.5 py-0.5 text-xs bg-yellow-500 text-white rounded"
+                                            onClick={() => handleEdit(d)}
                                         >
                                             Edit
                                         </button>
                                         <button
-                                            className="px-1.5 py-0.5 text-xs bg-red-500 dark:bg-red-600 text-white rounded"
-                                            onClick={() => handleDelete(r.id)}
+                                            className="px-1.5 py-0.5 text-xs bg-red-500 text-white rounded"
+                                            onClick={() => handleDelete(d.id)}
                                         >
                                             Delete
                                         </button>
